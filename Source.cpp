@@ -7,18 +7,15 @@
 
 using namespace std;
 
-#define ORDER "ASC"
-#define TYPE double
-#define THREADS 6
-#define LENGTH 100000
+#define TYPE uint32_t
 
 //template pro plneni ukolu
 template <class T>
-class TaskPart 
+class TaskPart
 {
 public:
 	uint32_t id;								//Id threadu
-	uint32_t from;								//Zacatek pole
+	int32_t from;								//Zacatek pole
 	uint32_t lengthEnd;							//Konec pole
 	vector<T> data;								//Pole s daty
 	string order;								//Smer trideni
@@ -29,18 +26,18 @@ public:
 
 	void Insertion()
 	{
-		for (uint32_t i = 1; i <= lengthEnd - 1; i++)
+		for (uint32_t i = from + 1; i < from + lengthEnd; i++)
 		{
-			T temporary = data.at(from + i);
+			T temporary = data.at(i);
 			int32_t j = i - 1;
 
-			while ((temporary < data.at(from + j)) && (j >= 0))
+			while (j >= from && ((order == "asc") ? data.at(j) > temporary:data.at(j) < temporary))
 			{
-				data.at(from + j + 1) = data.at(from + j);    //moves element forward
+				data.at(j + 1) = data.at(j);    //moves element forward
 				j = j - 1;
 			}
 
-			data.at(from + j + 1) = temporary;				//insert element in proper place
+			data.at(j + 1) = temporary;				//insert element in proper place
 		}
 	}
 
@@ -53,7 +50,7 @@ public:
 			// Find the minimum element in unsorted array  
 			minIndex = i;
 			for (uint32_t j = i + 1; j < lengthEnd; j++)
-				if (data.at(from + j) < data.at(from + minIndex))
+				if ((order == "asc") ? data.at(from + j) < data.at(from + minIndex) : data.at(from + j) > data.at(from + minIndex))
 					minIndex = j;
 
 			// Swap the found minimum element with the first element  
@@ -68,31 +65,29 @@ public:
 
 			// Last i elements are already in place  
 			for (uint32_t j = 0; j < lengthEnd - i - 1; j++)
-				if (data.at(from + j) > data.at(from + j + 1))
+				if ((order == "asc") ? data.at(from + j) > data.at(from + j + 1) :data.at(from + j) < data.at(from + j + 1))
 				{
 					T temporary = data.at(from + j);
 					data.at(from + j) = data.at(from + j + 1);
 					data.at(from + j + 1) = temporary;
 				}
-
 	}
 
 	void PrintData() {
 		cout << "Thread[" << id << "] : ";
 
 		if (lengthEnd <= 100)
-			for_each(data.begin() + from, data.begin() + from + lengthEnd, [](T &Temporary)
-			{
-				cout << Temporary << " "; 
-			});
+			for (uint32_t i = from; i < from + lengthEnd; i++) {
+				cout << data[i] << " ";
+			}
 		else
 			cout << "Too much element to print";
 
-		cout << "\n    lasted: " << duration.count()*1000 << "[ms]";
+		cout << "\n    lasted: " << duration.count() * 1000 << "[ms]";
+		cout << "\n    from: " << from << "[element]";
 		cout << "\n    lenght: " << lengthEnd << "[elements]";
 		cout << "\n\n";
 	}
-
 };
 
 template <class U>
@@ -100,7 +95,7 @@ class RandomNumbers {
 public:
 	std::vector<U> randNumbers;
 
-	void fullfill(U min, U max,uint32_t lengthNumbers) {
+	void fullfill(U min, U max, uint32_t lengthNumbers) {
 		U lowerBound = min;
 		U upperBound = max;
 
@@ -118,50 +113,109 @@ public:
 	}
 };
 
-void threadWorkspace(uint32_t id, TaskPart<TYPE>* task)
+template<class T>
+std::vector<T> MergeVectors(std::vector<T>mainVector, TaskPart<T>* task) {
+	uint32_t i = 0;
+	uint32_t j = task->from;
+
+	std::vector<T> resultVector;
+
+	while (i < mainVector.size() && j < task->from + task->lengthEnd) {
+		if ((task->order == "asc") ? mainVector.at(i) < task->data.at(j) : mainVector.at(i) > task->data.at(j)) {
+			resultVector.push_back(mainVector.at(i));
+			i++;
+		}
+		else {
+			resultVector.push_back(task->data.at(j));
+			j++;
+		}
+	}
+	while (i < mainVector.size()) {
+		resultVector.push_back(mainVector.at(i));
+		i++;
+	}
+	while (j < task->from + task->lengthEnd) {
+		resultVector.push_back(task->data.at(j));
+		j++;
+	}
+	return resultVector;
+}
+
+void printMergedVectors(std::vector<TYPE> MergeVectors)
+{
+	for (uint32_t i = 0; i<MergeVectors.size(); i++) {
+		std::cout << MergeVectors.at(i);
+		((i + 1) % 15 == 0) ? std::cout << std::endl : std::cout << " ";
+	}
+	std::cout << std::endl;
+}
+
+//**************
+// Thread work
+// *************
+
+void threadWorkspace(uint32_t id, TaskPart<TYPE> *task)
 {
 	auto start = chrono::system_clock::now();
 
 	cout << "Thread with id: " << id << "has started...\n";
-	task->Selection();
+	task->BubbleSort();
 
 	auto end = chrono::system_clock::now();
 
 	task->duration = end - start;
 }
 
-int main(int t_na, char **t_arg) 
+int main(int32_t t_na, char **t_arg)
 {
+	if (t_na != 4) {
+
+		std::cout << "Wrong numbers of parametr!" << std::endl;
+		return -1;
+	}
+
+	uint32_t length = atoi(t_arg[1]);
+	uint32_t threads = atoi(t_arg[2]);
+	std::string order = t_arg[3];
+
 	std::vector<std::thread> workers;
 	std::vector<TaskPart<TYPE>*> works;
 
 	RandomNumbers<TYPE> randNumbers;
-	randNumbers.fullfill((TYPE)0, (TYPE)100, LENGTH);
+	randNumbers.fullfill((TYPE)0, (TYPE)100, length);
 
-	uint32_t divided = LENGTH % THREADS;
-	for (uint32_t i = 0; i < THREADS; i++) {
+	uint32_t divided = length % threads;
+	uint32_t temporaryToSpace = 0;
+	for (uint32_t i = 0; i < threads; i++) {
 		uint32_t temporaryEndSpace = (divided != 0) ? 1 : 0;
-		uint32_t temporaryToSpace = 0;
 
-		works.push_back(new TaskPart<TYPE>(i, i * LENGTH / THREADS + temporaryToSpace, LENGTH / THREADS + temporaryEndSpace, randNumbers.randNumbers, ORDER));
+		works.push_back(new TaskPart<TYPE>(i, i * length / threads + temporaryToSpace, length / threads + temporaryEndSpace, randNumbers.randNumbers, order));
 		workers.push_back(std::thread([i, works]() {threadWorkspace(i, works.at(i)); }));
 
-		divided = (divided != 0)? divided - 1 : divided;
-		temporaryToSpace = (divided != 0) ? temporaryToSpace++ : temporaryToSpace;
+		temporaryToSpace = (temporaryEndSpace != 0) ? 1 : 0;
+		divided = (divided != 0) ? divided - 1 : divided;
 	}
 
-	std::for_each(workers.begin(), workers.end(), [](std::thread &barrier) {
-		barrier.join();
-	});
+	for (uint32_t i = 0; i < workers.size(); i++) {
+		workers[i].join();
+	}
 
-	static double AllTime;
-	std::for_each(works.begin(), works.end(), [](TaskPart<TYPE> *barrier) {
-		barrier->PrintData();
-		AllTime = (barrier->duration.count() > AllTime) ? barrier->duration.count() : AllTime;
-	});
+	double AllTime = 0;
+	for (uint32_t i = 0; i < works.size(); i++) {
+		works[i]->PrintData();
+		AllTime = (works[i]->duration.count() > AllTime) ? works[i]->duration.count() : AllTime;
+	}
 
-	cout << "AllTime needed: " << AllTime*1000 << "[ms]";
+	std::vector<TYPE>MergedVectors;
+	for (uint32_t i = 0; i < works.size(); i++) {
+		MergedVectors = MergeVectors(MergedVectors, works[i]);
+	}
 
+	printMergedVectors(MergedVectors);
+
+	std::cout << "AllTime needed for " << threads << " threads: " << AllTime * 1000 << "[ms]" << std::endl;
 	getchar();
 	return 0;
 }
+
+//Run command .. g++ ./source.cpp -pthread -o out && ./out
